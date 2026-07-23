@@ -1,0 +1,117 @@
+version: 2
+
+project_name: ttt
+
+before:
+  hooks:
+    - go mod download
+
+release:
+  prerelease: "false"
+
+env:
+  - CGO_ENABLED=0
+
+builds:
+  # Linux, x86_64, arm64.
+  - id: linux
+    dir: cmd/ttt
+    main: .
+    binary: ttt
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+  # macOS, Apple Silicon (arm64).
+  - id: darwin
+    dir: cmd/ttt
+    main: .
+    binary: ttt
+    goos:
+      - darwin
+    goarch:
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+  # Windows, x86_64.
+  - id: windows
+    dir: cmd/ttt
+    main: .
+    binary: ttt
+    goos:
+      - windows
+    goarch:
+      - amd64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: default
+    ids:
+      - linux
+      - darwin
+      - windows
+    name_template: >-
+      {{ .Binary }}_v{{ .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}amd64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: ['zip']
+
+# Linux packages.
+nfpms:
+  - ids: [linux]
+    file_name_template: 'ttt_v{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    maintainer: YouSysAdmin
+    homepage: https://github.com/YouSysAdmin/ttt
+    description: Task & Time Tracking tool
+    license: "MIT"
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+    section: utils
+    contents:
+      - src: ./LICENSE
+        dst: /usr/share/doc/ttt/copyright
+        file_info:
+          mode: 0644
+
+brews:
+  - ids: [default]
+    repository:
+      owner: YouSysAdmin
+      name: homebrew-apps
+    directory: Formula
+    homepage: https://github.com/YouSysAdmin/ttt
+    description: Task & Time Tracking tool
+    license: MIT
+
+checksum:
+  name_template: "checksums.sha256"
+
+snapshot:
+  version_template: "{{ .Tag }}-devel"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
