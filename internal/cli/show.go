@@ -1,10 +1,21 @@
 package cli
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 )
+
+// showLabelWidth pads every inline field label to the widest one
+// ("Completed: ") so all values start at the same column, matching the TUI
+// info panel. Description and Notes render as sections, not inline fields.
+const showLabelWidth = len("Completed: ")
+
+func showLabel(name string) string {
+	return fmt.Sprintf("%-*s", showLabelWidth, name+":")
+}
 
 func newShowCmd(app *App) *cobra.Command {
 	return &cobra.Command{
@@ -17,22 +28,26 @@ func newShowCmd(app *App) *cobra.Command {
 				return err
 			}
 			t := d.Task
-			cmd.Printf("Task: %s\n", t.Name)
+			cmd.Printf("%s%s\n", showLabel("Name"), t.Name)
 			if t.Project != "" {
-				cmd.Printf("Project: %s\n", t.Project)
+				cmd.Printf("%s%s\n", showLabel("Project"), t.Project)
 			}
-			cmd.Printf("Status: %s\n", t.Status)
-			if t.Description != "" {
-				cmd.Printf("Description: %s\n", t.Description)
-			}
+			cmd.Printf("%s%s\n", showLabel("Status"), t.Status)
 			if t.Repo != "" {
-				cmd.Printf("Repo: %s\n", t.Repo)
+				cmd.Printf("%s%s\n", showLabel("Repo"), t.Repo)
 			}
-			cmd.Printf("Created: %s\n", formatTime(t.CreatedAt))
+			cmd.Printf("%s%s\n", showLabel("Created"), formatTime(t.CreatedAt))
 			if !t.CompletedAt.IsZero() {
-				cmd.Printf("Completed: %s\n", formatTime(t.CompletedAt))
+				cmd.Printf("%s%s\n", showLabel("Completed"), formatTime(t.CompletedAt))
 			}
-			cmd.Printf("Total: %s across %d entries\n", formatDuration(d.Total), len(d.Entries))
+			cmd.Printf("%s%s across %d entries\n", showLabel("Total"), formatDuration(d.Total), len(d.Entries))
+
+			if t.Description != "" {
+				cmd.Println("\nDescription:")
+				for _, line := range strings.Split(t.Description, "\n") {
+					cmd.Printf("  %s\n", line)
+				}
+			}
 
 			if len(d.Notes) > 0 {
 				cmd.Println("\nNotes:")

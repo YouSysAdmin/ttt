@@ -307,30 +307,48 @@ func (m *model) listContent(w, maxLines int) string {
 	return strings.Join(lines, "\n")
 }
 
+// infoLabelWidth is the info-panel label column: every inline field label is
+// padded to the widest one ("Completed: ") so all values start at the same
+// column. Description and Notes render as sections, not inline fields.
+const infoLabelWidth = len("Completed: ")
+
+// infoLabel pads "name:" to the shared label column.
+func infoLabel(name string) string {
+	return fmt.Sprintf("%-*s", infoLabelWidth, name+":")
+}
+
 // infoContent renders the selected task's details and notes.
 func (m *model) infoContent(w, maxLines int) string {
 	d := m.detail
 	if d == nil {
 		return styleIdle.Render("No task selected")
 	}
-	lines := []string{styleTitle.Render(clip(d.Task.Name, w))}
+	lines := []string{infoLabel("Name") + styleTitle.Render(clip(d.Task.Name, w-infoLabelWidth))}
 	if d.Task.Project != "" {
-		lines = append(lines, clip("Project: "+d.Task.Project, w))
+		lines = append(lines, clip(infoLabel("Project")+d.Task.Project, w))
 	}
-	lines = append(lines, clip("Status: "+string(d.Task.Status), w))
-	if d.Task.Description != "" {
-		lines = append(lines, clip("Description: "+d.Task.Description, w))
-	}
+	lines = append(lines, clip(infoLabel("Status")+string(d.Task.Status), w))
 	if d.Task.Repo != "" {
-		lines = append(lines, clip("Repo: "+d.Task.Repo, w))
+		lines = append(lines, clip(infoLabel("Repo")+d.Task.Repo, w))
 	}
-	lines = append(lines, clip("Created: "+formatTime(d.Task.CreatedAt), w))
+	lines = append(lines, clip(infoLabel("Created")+formatTime(d.Task.CreatedAt), w))
 	if !d.Task.CompletedAt.IsZero() {
-		lines = append(lines, clip("Completed: "+formatTime(d.Task.CompletedAt), w))
+		lines = append(lines, clip(infoLabel("Completed")+formatTime(d.Task.CompletedAt), w))
 	}
-	lines = append(lines, clip(fmt.Sprintf("Total: %s across %d entries", formatDuration(d.Total), len(d.Entries)), w))
-	if len(d.Notes) > 0 && len(lines)+1 < maxLines {
-		lines = append(lines, styleTitle.Render("Notes:"))
+	lines = append(lines, clip(fmt.Sprintf("%s%s across %d entries", infoLabel("Total"), formatDuration(d.Total), len(d.Entries)), w))
+	if d.Task.Description != "" && len(lines)+2 < maxLines {
+		// A section like Notes: title, then the wrapped text indented below.
+		// Wrap rather than truncate, capped so it can't overflow the panel.
+		lines = append(lines, "", styleTitle.Render("Description:"))
+		desc := wrapValue("  ", d.Task.Description, w)
+		if avail := maxLines - len(lines); len(desc) > avail {
+			desc = desc[:avail]
+			desc[avail-1] = clip(desc[avail-1]+"…", w)
+		}
+		lines = append(lines, desc...)
+	}
+	if len(d.Notes) > 0 && len(lines)+2 < maxLines {
+		lines = append(lines, "", styleTitle.Render("Notes:"))
 		// Newest first. The window scrolls with the note cursor in modeNotes.
 		noteLines := make([]string, 0, len(d.Notes))
 		for i, n := range m.displayNotes() {
@@ -502,6 +520,57 @@ func clip(s string, width int) string {
 		return s
 	}
 	return truncate.StringWithTail(s, uint(width), "…")
+}
+
+// wrapValue wraps a "label value" field to width with a hanging indent:
+// continuation lines align under the value, not the panel edge. Words break
+// only at spaces — ansi.Wrap would also break at hyphens, splitting URLs and
+// defeating terminal link detection — so only tokens wider than a whole line
+// are hard-broken.
+func wrapValue(label, value string, width int) []string {
+	if width <= 0 {
+		return nil
+	}
+	indent := ansi.StringWidth(label)
+	if indent > width/2 {
+		// Too narrow for a hanging indent: fold the label into the flow.
+		value = label + value
+		label = ""
+		indent = 0
+	}
+	avail := width - indent
+	var out []string
+	line := ""
+	for _, word := range strings.Fields(value) {
+		switch {
+		case ansi.StringWidth(word) > avail:
+			if line != "" {
+				out = append(out, line)
+			}
+			pieces := strings.Split(ansi.Hardwrap(word, avail, false), "\n")
+			out = append(out, pieces[:len(pieces)-1]...)
+			line = pieces[len(pieces)-1]
+		case line == "":
+			line = word
+		case ansi.StringWidth(line)+1+ansi.StringWidth(word) <= avail:
+			line += " " + word
+		default:
+			out = append(out, line)
+			line = word
+		}
+	}
+	if line != "" || len(out) == 0 {
+		out = append(out, line)
+	}
+	pad := strings.Repeat(" ", indent)
+	for i := range out {
+		if i == 0 {
+			out[i] = label + out[i]
+		} else {
+			out[i] = pad + out[i]
+		}
+	}
+	return out
 }
 
 func formatTime(t time.Time) string {

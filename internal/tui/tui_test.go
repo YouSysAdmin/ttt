@@ -414,6 +414,47 @@ func TestStatsPeriodCycle(t *testing.T) {
 	}
 }
 
+func TestDescriptionWrapsInsteadOfCropping(t *testing.T) {
+	m := newTestModel(t)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = next.(*model)
+	m = press(t, m, "a")
+	m = typeText(t, m, "feat")
+	m = press(t, m, "tab")
+	url := "https://fariaedu.atlassian.net/browse/OA-31337"
+	m = typeText(t, m, "Needs to disable rev checking during deploy with maintenance enabled "+url)
+	m = press(t, m, "enter")
+
+	// The URL must wrap to a new line unbroken — a split URL defeats terminal
+	// link detection — and the fixed fields must still render alongside it.
+	v := m.View()
+	for _, want := range []string{url, "Created:", "Total:"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("view missing %q:\n%s", want, v)
+		}
+	}
+
+	// On a short terminal the Description section is capped with an ellipsis
+	// instead of overflowing the panel (at height 20 exactly one content line
+	// fits, so the first wrapped line gains a "…").
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
+	m = next.(*model)
+	v = m.View()
+	for _, want := range []string{"Description:", "maintenance…", "Created:", "Total:"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("view missing %q with capped description:\n%s", want, v)
+		}
+	}
+
+	// When there is no room even for the section title, it is dropped whole
+	// rather than half-rendered.
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 16})
+	m = next.(*model)
+	if strings.Contains(m.View(), "Description:") {
+		t.Fatalf("description should be dropped on a too-short panel:\n%s", m.View())
+	}
+}
+
 func TestNotesScrollFollowsCursor(t *testing.T) {
 	m := newTestModel(t)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
@@ -565,7 +606,7 @@ func TestAddFormAllFields(t *testing.T) {
 	if got.Name != "feat" || got.Description != "the description" || got.Project != "acme" || got.Repo != repo {
 		t.Fatalf("task fields wrong: %+v", got)
 	}
-	if !strings.Contains(m.View(), "Project: acme") {
+	if !strings.Contains(m.View(), infoLabel("Project")+"acme") {
 		t.Fatalf("info panel missing project:\n%s", m.View())
 	}
 }
