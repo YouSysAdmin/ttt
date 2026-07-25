@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	datepicker "github.com/ethanefung/bubble-datepicker"
 
+	"ttt/internal/core/update"
 	"ttt/internal/domain/notes"
 	"ttt/internal/domain/tasks"
 	"ttt/internal/domain/tracker"
@@ -23,9 +24,11 @@ import (
 
 // Deps are the handlers the TUI drives.
 type Deps struct {
-	Tasks   *tasks.Handler
-	Tracker *tracker.Handler
-	Notes   *notes.Handler
+	Tasks         *tasks.Handler
+	Tracker       *tracker.Handler
+	Notes         *notes.Handler
+	Version       string // running build, for the startup update check
+	NoUpdateCheck bool   // --no-update-check: skip the startup check entirely
 }
 
 // Run starts the TUI and blocks until the user quits.
@@ -162,6 +165,8 @@ type model struct {
 	flashErr bool
 	width    int
 	height   int
+
+	updateVersion string // newer release found by the startup check
 }
 
 func newModel(d Deps) *model {
@@ -257,12 +262,36 @@ func (m *model) selected() *tasks.Row {
 	return m.rows[m.cursor]
 }
 
-func (m *model) Init() tea.Cmd { return tick() }
+func (m *model) Init() tea.Cmd {
+	if m.deps.NoUpdateCheck {
+		return tick()
+	}
+	return tea.Batch(tick(), m.checkUpdate)
+}
+
+// checkUpdate asks GitHub for a newer release once at startup. It runs as a
+// tea command (own goroutine), so the UI never waits on the network; failures
+// and dev builds resolve to an empty message.
+func (m *model) checkUpdate() tea.Msg {
+	if m.deps.NoUpdateCheck {
+		return updateCheckMsg{}
+	}
+	res := update.CheckLatestVersion(m.deps.Version)
+	if res.Err != nil {
+		return updateCheckMsg{}
+	}
+	return updateCheckMsg{latestVersion: res.LatestVersion}
+}
+
+type updateCheckMsg struct{ latestVersion string }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		return m, nil
+	case updateCheckMsg:
+		m.updateVersion = msg.latestVersion
 		return m, nil
 	case tickMsg:
 		if m.mode == modeList {

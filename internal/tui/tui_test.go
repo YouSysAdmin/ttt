@@ -414,6 +414,49 @@ func TestStatsPeriodCycle(t *testing.T) {
 	}
 }
 
+func TestUpdateBanner(t *testing.T) {
+	m := newTestModel(t)
+
+	// No check result: no banner.
+	if strings.Contains(m.View(), "Update available") {
+		t.Fatalf("banner rendered before any check result:\n%s", m.View())
+	}
+
+	// A newer release: the banner appears in the flash slot.
+	next, _ := m.Update(updateCheckMsg{latestVersion: "9.9.9"})
+	m = next.(*model)
+	if !strings.Contains(m.View(), "Update available: v9.9.9") || !strings.Contains(m.View(), "ttt update") {
+		t.Fatalf("expected update banner, view:\n%s", m.View())
+	}
+
+	// Transient flashes win over the banner, then it returns.
+	m.setFlash("saved", false)
+	if strings.Contains(m.View(), "Update available") {
+		t.Fatalf("flash must override the banner:\n%s", m.View())
+	}
+	m.setFlash("", false)
+	if !strings.Contains(m.View(), "Update available") {
+		t.Fatalf("banner must return once the flash clears:\n%s", m.View())
+	}
+
+	// Up-to-date (empty) result: no banner.
+	m2 := newTestModel(t)
+	next, _ = m2.Update(updateCheckMsg{})
+	m2 = next.(*model)
+	if strings.Contains(m2.View(), "Update available") {
+		t.Fatalf("banner rendered for empty check result:\n%s", m2.View())
+	}
+
+	// --no-update-check: the check resolves empty without touching the
+	// network, even for a release build.
+	m3 := newTestModel(t)
+	m3.deps.Version = "0.0.1"
+	m3.deps.NoUpdateCheck = true
+	if msg := m3.checkUpdate(); msg.(updateCheckMsg).latestVersion != "" {
+		t.Fatalf("disabled check must return an empty result, got %+v", msg)
+	}
+}
+
 func TestDescriptionWrapsInsteadOfCropping(t *testing.T) {
 	m := newTestModel(t)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})

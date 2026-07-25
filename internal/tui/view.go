@@ -23,6 +23,7 @@ var (
 	}
 	styleFlashOk  = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	styleFlashErr = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	styleUpdate   = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 	styleHelp     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	styleTitle    = lipgloss.NewStyle().Bold(true)
 	styleBorder   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
@@ -267,13 +268,17 @@ func (m *model) bottomBar(w int) string {
 		top = styleHelp.Render(clip(" ↑/↓ · enter start/pause · x stop · a add · e edit · d del · n add note · v notes · f filter · t period · T range · q quit", w))
 	}
 
+	// The flash slot doubles as the update banner: transient feedback wins, the banner fills the quiet moments.
 	flash := " "
-	if m.flash != "" {
+	switch {
+	case m.flash != "":
 		style := styleFlashOk
 		if m.flashErr {
 			style = styleFlashErr
 		}
 		flash = style.Render(truncate.StringWithTail(" "+m.flash, uint(w), "…"))
+	case m.updateVersion != "":
+		flash = styleUpdate.Render(clip(" ↑ Update available: v"+m.updateVersion+" — run: ttt update", w))
 	}
 	return top + "\n" + flash
 }

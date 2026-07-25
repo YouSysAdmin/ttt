@@ -4,11 +4,13 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"ttt/internal/core/env"
+	"ttt/internal/core/update"
 	"ttt/internal/database/boltkv"
 	"ttt/internal/domain/notes"
 	"ttt/internal/domain/store"
@@ -51,6 +53,7 @@ func Execute(version string) error {
 
 func newRootCmd(app *App, version string) *cobra.Command {
 	var configPath, dbPath string
+	var noUpdateCheck bool
 
 	root := &cobra.Command{
 		Use:           "ttt",
@@ -80,6 +83,20 @@ func newRootCmd(app *App, version string) *cobra.Command {
 			app.Notes = &notes.Handler{Runtime: app.rt, Store: app.st}
 			return nil
 		},
+		// After any successful command, nudge about a newer release (cached,
+		// at most one short-timeout request per day). The TUI has its own
+		// banner and `update` reports explicitly; scripts are spared by the
+		// stderr TTY check. Cobra skips PostRun entirely when RunE errors.
+		PersistentPostRun: func(cmd *cobra.Command, args []string) {
+			switch cmd.Name() {
+			case "tui", "update", "help", "completion", "__complete":
+				return
+			}
+			if noUpdateCheck || !isTerminal(os.Stderr) {
+				return
+			}
+			update.NotifyIfOutdated(version, cmd.ErrOrStderr())
+		},
 		// With no subcommand, report what's being tracked.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := app.Tracker.Status(time.Now())
@@ -97,6 +114,7 @@ func newRootCmd(app *App, version string) *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&configPath, "config", "", "path to config file (default: first of {ttt,config}.{yaml,yml} in ., ~/.config/ttt, ~/.local/share/ttt, ~/.ttt)")
 	root.PersistentFlags().StringVar(&dbPath, "db", "", "path to the database file (overrides config and TTT_DATABASE_PATH)")
+	root.PersistentFlags().BoolVar(&noUpdateCheck, "no-update-check", false, "disable the automatic update check (CLI notice and TUI banner)")
 
 	root.AddCommand(
 		newAddCmd(app),
@@ -108,7 +126,8 @@ func newRootCmd(app *App, version string) *cobra.Command {
 		newShowCmd(app),
 		newEditCmd(app),
 		newStatsCmd(app),
-		newTuiCmd(app),
+		newTuiCmd(app, version, &noUpdateCheck),
+		newUpdateCmd(version),
 	)
 	return root
 }
@@ -125,6 +144,13 @@ func reportImport(cmd *cobra.Command, app *App, st *trackermodel.State, end time
 	if n > 0 {
 		cmd.Printf("Imported %d commit(s) from %s\n", n, repo)
 	}
+}
+
+// isTerminal reports whether f is attached to a terminal, so update notices
+// never leak into pipes or redirected output.
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 // formatTime renders a timestamp for display, in local time.

@@ -63,10 +63,16 @@ ttt tui                     # interactive mode
 | `edit <name>` | Update fields (`-n` rename, `-d`, `-p`, `-g`; empty value clears) |
 | `stats` | Time per task and project (`-p/--period 10d/2w/6m/1y`, default `1m`; `--project` filters) |
 | `tui` | Interactive terminal UI |
+| `update` | Self-update to the latest GitHub release (`--check` only reports); blocked for brew/apk/deb/rpm installs — use the package manager instead |
 | *(no command)* | Print tracking status |
 
 Global flags: `--db <path>` (use a specific database), `--config <path>`,
-`--version`.
+`--no-update-check` (disable the automatic update check), `--version`.
+
+After a successful command, ttt prints a one-line update notice to stderr
+when a newer release exists (checked at most once a day, cached, terminal
+only — pipes and scripts never see it). The TUI shows the same information
+as a banner in its bottom bar.
 
 ## TUI
 
