@@ -17,6 +17,9 @@ func newPauseCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if app.JSON {
+				return printJSON(cmd, closedSession(app, st, now))
+			}
 			cmd.Printf("Paused %q (%s this session)\n", st.TaskName, formatDuration(now.Sub(st.Start)))
 			reportImport(cmd, app, st, now)
 			return nil

@@ -14,6 +14,9 @@ func newAddCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if app.JSON {
+				return printJSON(cmd, t)
+			}
 			cmd.Printf("Added task %q\n", t.Name)
 			return nil
 		},

@@ -6,7 +6,7 @@ import (
 	"ttt/internal/core/update"
 )
 
-func newUpdateCmd(version string) *cobra.Command {
+func newUpdateCmd(app *App, version string) *cobra.Command {
 	var checkOnly bool
 
 	cmd := &cobra.Command{
@@ -21,15 +21,26 @@ func newUpdateCmd(version string) *cobra.Command {
 		// PersistentPreRunE skips config loading and the store flock.
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error { return nil },
 		RunE: func(cmd *cobra.Command, args []string) error {
+			isDev := version == "" || version == "dev"
+
 			if checkOnly {
 				res := update.CheckLatestVersion(version)
-				switch {
-				case res.Err != nil:
+				if res.Err != nil {
 					return res.Err
+				}
+				if app.JSON {
+					return printJSON(cmd, struct {
+						CurrentVersion  string `json:"current_version"`
+						LatestVersion   string `json:"latest_version,omitempty"`
+						UpdateAvailable bool   `json:"update_available"`
+						DevBuild        bool   `json:"dev_build,omitempty"`
+					}{version, res.LatestVersion, res.LatestVersion != "", isDev})
+				}
+				switch {
 				case res.LatestVersion != "":
 					cmd.Printf("Update available: v%s -> v%s\nRun `ttt update` to install it.\n",
 						res.CurrentVersion, res.LatestVersion)
-				case version == "" || version == "dev":
+				case isDev:
 					cmd.Println("Development build; version check skipped")
 				default:
 					cmd.Printf("Already up to date (v%s)\n", res.CurrentVersion)
@@ -44,7 +55,20 @@ func newUpdateCmd(version string) *cobra.Command {
 			if src.Managed() {
 				return update.BlockedError(src)
 			}
-			return update.DownloadAndReplace(version, cmd.OutOrStdout())
+			if app.JSON {
+				// Progress goes to stderr so stdout stays one JSON document.
+				latest, err := update.DownloadAndReplace(version, cmd.ErrOrStderr())
+				if err != nil {
+					return err
+				}
+				return printJSON(cmd, struct {
+					CurrentVersion string `json:"current_version"`
+					LatestVersion  string `json:"latest_version"`
+					Updated        bool   `json:"updated"`
+				}{version, latest, isDev || update.CompareVersions(version, latest) < 0})
+			}
+			_, err = update.DownloadAndReplace(version, cmd.OutOrStdout())
+			return err
 		},
 	}
 	cmd.Flags().BoolVar(&checkOnly, "check", false, "only check for a newer version, do not install")

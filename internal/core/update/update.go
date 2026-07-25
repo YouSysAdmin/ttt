@@ -84,13 +84,15 @@ func CheckLatestVersion(currentVersion string) CheckResult {
 }
 
 // DownloadAndReplace downloads the latest release from GitHub and replaces
-// the currently running binary. Progress messages are written to w.
-func DownloadAndReplace(currentVersion string, w io.Writer) error {
+// the currently running binary. Progress messages are written to w. It
+// returns the latest release version — also when already up to date, so
+// callers can report the outcome without a second API call.
+func DownloadAndReplace(currentVersion string, w io.Writer) (string, error) {
 	fmt.Fprintln(w, "Checking for latest version...")
 
 	rel, err := fetchRelease(ReleaseAPIURL)
 	if err != nil {
-		return fmt.Errorf("failed to fetch release info: %w", err)
+		return "", fmt.Errorf("failed to fetch release info: %w", err)
 	}
 
 	latest := stripV(rel.TagName)
@@ -99,27 +101,27 @@ func DownloadAndReplace(currentVersion string, w io.Writer) error {
 		fmt.Fprintln(w, "Warning: development build, current version unknown")
 	} else if CompareVersions(currentVersion, latest) >= 0 {
 		fmt.Fprintf(w, "Already up to date (v%s)\n", currentVersion)
-		return nil
+		return latest, nil
 	}
 
 	assetName := BuildAssetName(latest, runtime.GOOS, runtime.GOARCH)
 	assetURL := findAssetURL(rel.Assets, assetName)
 	if assetURL == "" {
-		return fmt.Errorf("no release asset found for %s/%s (expected %s)", runtime.GOOS, runtime.GOARCH, assetName)
+		return "", fmt.Errorf("no release asset found for %s/%s (expected %s)", runtime.GOOS, runtime.GOARCH, assetName)
 	}
 
 	fmt.Fprintf(w, "Downloading ttt v%s for %s/%s...\n", latest, runtime.GOOS, runtime.GOARCH)
 
 	archivePath, err := downloadFile(assetURL)
 	if err != nil {
-		return fmt.Errorf("failed to download release: %w", err)
+		return "", fmt.Errorf("failed to download release: %w", err)
 	}
 	defer os.Remove(archivePath)
 
 	fmt.Fprintln(w, "Verifying checksum...")
 
 	if err := verifyChecksum(rel.Assets, archivePath, assetName); err != nil {
-		return fmt.Errorf("checksum verification failed: %w", err)
+		return "", fmt.Errorf("checksum verification failed: %w", err)
 	}
 
 	binName := binaryName
@@ -129,18 +131,18 @@ func DownloadAndReplace(currentVersion string, w io.Writer) error {
 
 	binData, err := extractBinary(archivePath, binName)
 	if err != nil {
-		return fmt.Errorf("failed to extract binary: %w", err)
+		return "", fmt.Errorf("failed to extract binary: %w", err)
 	}
 
 	exePath, err := execPath()
 	if err != nil {
-		return fmt.Errorf("failed to determine executable path: %w", err)
+		return "", fmt.Errorf("failed to determine executable path: %w", err)
 	}
 
 	fmt.Fprintf(w, "Replacing %s...\n", exePath)
 
 	if err := atomicReplace(exePath, binData); err != nil {
-		return fmt.Errorf("failed to replace binary: %w", err)
+		return "", fmt.Errorf("failed to replace binary: %w", err)
 	}
 
 	if isDev(currentVersion) {
@@ -149,7 +151,7 @@ func DownloadAndReplace(currentVersion string, w io.Writer) error {
 		fmt.Fprintf(w, "Updated successfully: v%s -> v%s\n", currentVersion, latest)
 	}
 
-	return nil
+	return latest, nil
 }
 
 // CompareVersions compares two semantic version strings.

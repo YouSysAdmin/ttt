@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"ttt/internal/cli"
@@ -11,8 +10,9 @@ import (
 var version = "dev"
 
 func main() {
+	// Execute prints the error itself (text or JSON, per --json); main only
+	// translates it into the exit code.
 	if err := cli.Execute(version); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }

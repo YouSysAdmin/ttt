@@ -19,6 +19,9 @@ func newNoteCmd(app *App) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if app.JSON {
+				return printJSON(cmd, n)
+			}
 			cmd.Printf("Noted on %q\n", n.TaskName)
 			return nil
 		},

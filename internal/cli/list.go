@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"ttt/internal/models/task"
 )
 
 func newListCmd(app *App) *cobra.Command {
@@ -19,6 +21,19 @@ func newListCmd(app *App) *cobra.Command {
 			rows, err := app.Tasks.List(time.Now(), project)
 			if err != nil {
 				return err
+			}
+			if app.JSON {
+				type rowJSON struct {
+					Task         *task.Task `json:"task"`
+					TotalSeconds int64      `json:"total_seconds"`
+					Total        string     `json:"total"`
+					Running      bool       `json:"running"`
+				}
+				out := make([]rowJSON, 0, len(rows))
+				for _, r := range rows {
+					out = append(out, rowJSON{r.Task, secs(r.Total), formatDuration(r.Total), r.Running})
+				}
+				return printJSON(cmd, out)
 			}
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "NAME\tPROJECT\tSTATUS\tTOTAL\tDESCRIPTION")

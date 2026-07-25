@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"ttt/internal/domain/store"
 	"ttt/internal/domain/tasks"
 	"ttt/internal/domain/tracker"
+	"ttt/internal/models/task"
 	trackermodel "ttt/internal/models/tracker"
 )
 
@@ -29,6 +31,10 @@ type App struct {
 	Tasks   *tasks.Handler
 	Tracker *tracker.Handler
 	Notes   *notes.Handler
+
+	// JSON is the global --json flag: every command output (and the error printer)
+	// switches to machine-readable JSON.
+	JSON bool
 }
 
 // Close releases the store. Safe on a partially-initialized App.
@@ -40,13 +46,25 @@ func (a *App) Close() error {
 }
 
 // Execute runs the CLI and always closes the store, even when a command
-// errors (PersistentPostRunE would be skipped by cobra in that case).
+// errors (PersistentPostRunE would be skipped by cobra in that case). It is
+// also the single error printer: text or a JSON envelope depending on --json,
+// so main only turns the returned error into the exit code.
 func Execute(version string) error {
 	app := &App{}
 	root := newRootCmd(app, version)
 	err := root.Execute()
 	if cerr := app.Close(); cerr != nil && err == nil {
 		err = cerr
+	}
+	if err != nil {
+		if app.JSON {
+			data, _ := json.Marshal(struct {
+				Error string `json:"error"`
+			}{err.Error()})
+			fmt.Fprintln(os.Stderr, string(data))
+		} else {
+			fmt.Fprintln(os.Stderr, "error:", err)
+		}
 	}
 	return err
 }
@@ -92,7 +110,7 @@ func newRootCmd(app *App, version string) *cobra.Command {
 			case "tui", "update", "help", "completion", "__complete":
 				return
 			}
-			if noUpdateCheck || !isTerminal(os.Stderr) {
+			if noUpdateCheck || app.JSON || !isTerminal(os.Stderr) {
 				return
 			}
 			update.NotifyIfOutdated(version, cmd.ErrOrStderr())
@@ -102,6 +120,24 @@ func newRootCmd(app *App, version string) *cobra.Command {
 			s, err := app.Tracker.Status(time.Now())
 			if err != nil {
 				return err
+			}
+			if app.JSON {
+				if s.State == nil {
+					return printJSON(cmd, struct {
+						Tracking bool `json:"tracking"`
+					}{false})
+				}
+				return printJSON(cmd, struct {
+					Tracking       bool       `json:"tracking"`
+					Task           *task.Task `json:"task"`
+					StartedAt      time.Time  `json:"started_at"`
+					SessionSeconds int64      `json:"session_seconds"`
+					Session        string     `json:"session"`
+					TotalSeconds   int64      `json:"total_seconds"`
+					Total          string     `json:"total"`
+				}{true, s.Task, s.State.Start,
+					secs(s.Elapsed), formatDuration(s.Elapsed),
+					secs(s.Total), formatDuration(s.Total)})
 			}
 			if s.State == nil {
 				cmd.Println("Not tracking")
@@ -115,6 +151,7 @@ func newRootCmd(app *App, version string) *cobra.Command {
 	root.PersistentFlags().StringVar(&configPath, "config", "", "path to config file (default: first of {ttt,config}.{yaml,yml} in ., ~/.config/ttt, ~/.local/share/ttt, ~/.ttt)")
 	root.PersistentFlags().StringVar(&dbPath, "db", "", "path to the database file (overrides config and TTT_DATABASE_PATH)")
 	root.PersistentFlags().BoolVar(&noUpdateCheck, "no-update-check", false, "disable the automatic update check (CLI notice and TUI banner)")
+	root.PersistentFlags().BoolVar(&app.JSON, "json", false, "output results as JSON (for scripting)")
 
 	root.AddCommand(
 		newAddCmd(app),
@@ -127,7 +164,7 @@ func newRootCmd(app *App, version string) *cobra.Command {
 		newEditCmd(app),
 		newStatsCmd(app),
 		newTuiCmd(app, version, &noUpdateCheck),
-		newUpdateCmd(version),
+		newUpdateCmd(app, version),
 	)
 	return root
 }

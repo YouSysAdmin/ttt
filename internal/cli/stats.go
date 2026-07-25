@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"ttt/internal/domain/tasks"
 )
 
 var periodRe = regexp.MustCompile(`^([1-9][0-9]*)([hdwmy])$`)
@@ -58,6 +60,10 @@ func newStatsCmd(app *App) *cobra.Command {
 				return err
 			}
 
+			if app.JSON {
+				return printStatsJSON(cmd, from, now, rows)
+			}
+
 			cmd.Printf("Period: %s → %s\n\n", formatTime(from), formatTime(now))
 			if len(rows) == 0 {
 				cmd.Println("No tracked time in this period")
@@ -93,6 +99,45 @@ func newStatsCmd(app *App) *cobra.Command {
 	cmd.Flags().StringVarP(&period, "period", "p", "1m", "period to cover: <N><unit>, units h, d, w, m, y (e.g. 10d, 2w, 6m)")
 	cmd.Flags().StringVar(&project, "project", "", "only count tasks in this project")
 	return cmd
+}
+
+// printStatsJSON emits the whole stats report as one document: per-task rows,
+// per-project subtotals (always present, unlike the text view), and the grand
+// total, with durations as both seconds and HH:MM:SS.
+func printStatsJSON(cmd *cobra.Command, from, to time.Time, rows []*tasks.StatRow) error {
+	type taskJSON struct {
+		Name    string `json:"name"`
+		Project string `json:"project,omitempty"`
+		Seconds int64  `json:"seconds"`
+		Time    string `json:"time"`
+	}
+	type projectJSON struct {
+		Project string `json:"project"`
+		Seconds int64  `json:"seconds"`
+		Time    string `json:"time"`
+	}
+
+	byProject := map[string]time.Duration{}
+	var total time.Duration
+	taskRows := make([]taskJSON, 0, len(rows))
+	for _, r := range rows {
+		taskRows = append(taskRows, taskJSON{r.Task.Name, r.Task.Project, secs(r.Total), formatDuration(r.Total)})
+		byProject[r.Task.Project] += r.Total
+		total += r.Total
+	}
+	projectRows := make([]projectJSON, 0, len(byProject))
+	for _, p := range sortedByDuration(byProject) {
+		projectRows = append(projectRows, projectJSON{p, secs(byProject[p]), formatDuration(byProject[p])})
+	}
+
+	return printJSON(cmd, struct {
+		From         time.Time     `json:"from"`
+		To           time.Time     `json:"to"`
+		Tasks        []taskJSON    `json:"tasks"`
+		Projects     []projectJSON `json:"projects"`
+		TotalSeconds int64         `json:"total_seconds"`
+		Total        string        `json:"total"`
+	}{from, to, taskRows, projectRows, secs(total), formatDuration(total)})
 }
 
 func hasKey(m map[string]time.Duration, k string) bool {

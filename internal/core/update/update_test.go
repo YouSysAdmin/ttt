@@ -302,8 +302,12 @@ func TestDownloadAndReplace(t *testing.T) {
 
 	t.Run("already up to date", func(t *testing.T) {
 		var buf bytes.Buffer
-		if err := DownloadAndReplace("2.0.0", &buf); err != nil {
+		latest, err := DownloadAndReplace("2.0.0", &buf)
+		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
+		}
+		if latest != "2.0.0" {
+			t.Errorf("latest = %q, want %q even when up to date", latest, "2.0.0")
 		}
 		if !strings.Contains(buf.String(), "Already up to date") {
 			t.Errorf("output = %q, want 'Already up to date'", buf.String())
@@ -313,8 +317,12 @@ func TestDownloadAndReplace(t *testing.T) {
 	t.Run("update available", func(t *testing.T) {
 		resetBinary()
 		var buf bytes.Buffer
-		if err := DownloadAndReplace("1.0.0", &buf); err != nil {
+		latest, err := DownloadAndReplace("1.0.0", &buf)
+		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
+		}
+		if latest != "2.0.0" {
+			t.Errorf("latest = %q, want %q", latest, "2.0.0")
 		}
 		if !strings.Contains(buf.String(), "Updated successfully") {
 			t.Errorf("output = %q, want 'Updated successfully'", buf.String())
@@ -331,7 +339,7 @@ func TestDownloadAndReplace(t *testing.T) {
 	t.Run("dev build updates with warning", func(t *testing.T) {
 		resetBinary()
 		var buf bytes.Buffer
-		if err := DownloadAndReplace("dev", &buf); err != nil {
+		if _, err := DownloadAndReplace("dev", &buf); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		out := buf.String()

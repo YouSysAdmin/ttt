@@ -67,7 +67,14 @@ ttt tui                     # interactive mode
 | *(no command)* | Print tracking status |
 
 Global flags: `--db <path>` (use a specific database), `--config <path>`,
-`--no-update-check` (disable the automatic update check), `--version`.
+`--json` (machine-readable output, see below), `--no-update-check` (disable the automatic update check), `--version`.
+
+With `--json`, every command writes exactly one JSON document to stdout and
+errors become `{"error": "..."}` on stderr (exit code 1), so output pipes
+straight into `jq` and scripts. Durations appear both as seconds
+(`total_seconds`, `session_seconds`) and as `HH:MM:SS` strings; timestamps
+are RFC 3339.
+Examples: `ttt --json list | jq '.[].task.name'`,`ttt --json stats | jq .total_seconds`.
 
 After a successful command, ttt prints a one-line update notice to stderr
 when a newer release exists (checked at most once a day, cached, terminal

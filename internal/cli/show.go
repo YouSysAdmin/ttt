@@ -6,6 +6,10 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"ttt/internal/models/entry"
+	"ttt/internal/models/note"
+	"ttt/internal/models/task"
 )
 
 // showLabelWidth pads every inline field label to the widest one
@@ -26,6 +30,24 @@ func newShowCmd(app *App) *cobra.Command {
 			d, err := app.Tasks.Show(args[0], time.Now())
 			if err != nil {
 				return err
+			}
+			if app.JSON {
+				// Empty collections marshal as [], not null, for consumers.
+				entries := d.Entries
+				if entries == nil {
+					entries = []*entry.Entry{}
+				}
+				ns := d.Notes
+				if ns == nil {
+					ns = []*note.Note{}
+				}
+				return printJSON(cmd, struct {
+					Task         *task.Task     `json:"task"`
+					TotalSeconds int64          `json:"total_seconds"`
+					Total        string         `json:"total"`
+					Entries      []*entry.Entry `json:"entries"`
+					Notes        []*note.Note   `json:"notes"`
+				}{d.Task, secs(d.Total), formatDuration(d.Total), entries, ns})
 			}
 			t := d.Task
 			cmd.Printf("%s%s\n", showLabel("Name"), t.Name)
