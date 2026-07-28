@@ -105,10 +105,49 @@ func TestAddStartPauseFlow(t *testing.T) {
 		t.Fatalf("expected paused state, view:\n%s", m.View())
 	}
 
-	// x with nothing running: error flash.
+	// x on the paused selected task: marked done directly, no session needed.
 	m = press(t, m, "x")
-	if !m.flashErr {
-		t.Fatalf("expected error flash for stop-when-idle, got %q", m.flash)
+	if m.flashErr || !strings.Contains(m.flash, "stopped") {
+		t.Fatalf("expected stopped flash, got %q (err=%v)", m.flash, m.flashErr)
+	}
+	if !strings.Contains(m.View(), "No current tasks") {
+		t.Fatalf("done task still in current view:\n%s", m.View())
+	}
+}
+
+func TestStopActsOnSelection(t *testing.T) {
+	m := newTestModel(t)
+	m = press(t, m, "a")
+	m = typeText(t, m, "one")
+	m = press(t, m, "enter")
+	m = press(t, m, "a")
+	m = typeText(t, m, "two")
+	m = press(t, m, "enter")
+
+	// Start "two", then select the still-todo "one" in the new filter.
+	m.selectTask("two")
+	m = press(t, m, "s") // follows "two" into the current filter
+	m = press(t, m, "f") // -> new, where "one" still lives
+	m.selectTask("one")
+
+	// x stops the selected task, not the running one.
+	m = press(t, m, "x")
+	if m.flashErr || !strings.Contains(m.flash, `stopped "one"`) {
+		t.Fatalf("expected stopped-one flash, got %q (err=%v)", m.flash, m.flashErr)
+	}
+	if m.status == nil || m.status.State == nil || m.status.State.TaskName != "two" {
+		t.Fatalf("running task disturbed: %+v", m.status)
+	}
+
+	// x on the running selected task closes its session.
+	m = press(t, m, "f", "f") // new -> done -> current, where "two" runs
+	m.selectTask("two")
+	m = press(t, m, "x")
+	if m.flashErr || !strings.Contains(m.flash, `stopped "two"`) {
+		t.Fatalf("expected stopped-two flash, got %q (err=%v)", m.flash, m.flashErr)
+	}
+	if m.status.State != nil {
+		t.Fatalf("session still open: %+v", m.status.State)
 	}
 }
 

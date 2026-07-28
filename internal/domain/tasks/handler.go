@@ -127,6 +127,30 @@ func (h *Handler) Edit(name string, ch Changes) (*task.Task, error) {
 	return t, nil
 }
 
+// Finish task by name. Fails with errs.ErrTaskNotFound.
+func (h *Handler) Finish(name string, at time.Time) (*task.Task, error) {
+	t, err := h.Store.Tasks.Get(name)
+	if err != nil {
+		return nil, err
+	}
+	if t == nil {
+		return nil, errs.ErrTaskNotFound
+	}
+	st, err := h.Store.Tracker.Active()
+	if err != nil {
+		return nil, err
+	}
+	if st != nil && st.TaskName == name {
+		return nil, errs.ErrAlreadyRunning
+	}
+	t.Status = task.StatusDone
+	t.CompletedAt = at
+	if err := h.Store.Tasks.Upsert(t); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
 // Row is one task with its tracked total for listing.
 type Row struct {
 	Task    *task.Task

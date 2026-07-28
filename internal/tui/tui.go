@@ -347,7 +347,7 @@ func (m *model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "p":
 		m.closeRunning(false)
 	case "x":
-		m.closeRunning(true)
+		m.stopSelected()
 	case "a":
 		m.openAddForm()
 	case "n":
@@ -528,6 +528,26 @@ func (m *model) startSelected() {
 	m.filter = filterCurrent
 	m.refresh()
 	m.selectTask(t.Name)
+}
+
+// stopSelected stops the task under the cursor: the running one closes its
+// session (with commit import), any other is marked done directly.
+func (m *model) stopSelected() {
+	sel := m.selected()
+	if sel == nil {
+		return
+	}
+	if m.status != nil && m.status.State != nil && m.status.State.TaskName == sel.Task.Name {
+		m.closeRunning(true)
+		return
+	}
+	t, err := m.deps.Tasks.Finish(sel.Task.Name, time.Now())
+	if err != nil {
+		m.setFlash(err.Error(), true)
+		return
+	}
+	m.setFlash(fmt.Sprintf("stopped %q", t.Name), false)
+	m.refresh()
 }
 
 // closeRunning pauses or (done=true) stops the running task.
