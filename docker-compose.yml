@@ -1,0 +1,35 @@
+# ttt server - share one task database between workstations.
+#
+#   docker compose up -d
+#
+# Point clients at it:
+#
+#   export TTT_REMOTE_URL=http://<host>:8320
+#   export TTT_REMOTE_TOKEN=change-me
+#   ttt list
+#
+# Plain HTTP is fine for localhost, a trusted LAN, or a VPN. For anything
+# else enable TLS (see the environment examples below and the README).
+services:
+  ttt:
+    image: ghcr.io/yousysadmin/ttt:latest
+    container_name: ttt-server
+    restart: unless-stopped
+    ports:
+      - "8320:8320"
+    environment:
+      # Required - clients must present this token.
+      TTT_SERVER_TOKEN: change-me
+      # TLS (optional). Self-signed - clients connect with --remote-insecure:
+      #   TTT_SERVER_TLS_MODE: self-signed
+      #   TTT_SERVER_TLS_FQDN: ttt.example.com
+      # Or your own certificate, mounted below:
+      #   TTT_SERVER_TLS_MODE: manual
+      #   TTT_SERVER_TLS_CERT: /certs/server.crt
+      #   TTT_SERVER_TLS_KEY: /certs/server.key
+    volumes:
+      - ttt-data:/data
+      # - ./certs:/certs:ro
+
+volumes:
+  ttt-data:

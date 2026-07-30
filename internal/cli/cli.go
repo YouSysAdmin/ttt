@@ -4,6 +4,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"ttt/internal/core/env"
 	"ttt/internal/core/update"
 	"ttt/internal/database/boltkv"
+	remoteclient "ttt/internal/remote/client"
 	"ttt/internal/domain/notes"
 	"ttt/internal/domain/store"
 	"ttt/internal/domain/tasks"
@@ -27,6 +29,8 @@ type App struct {
 	rt *env.Runtime
 	st *store.Store
 	kv *boltkv.Store
+	// remote is set in client mode - the TUI mode badge reads its sync state.
+	remote *remoteclient.Client
 
 	Tasks   *tasks.Handler
 	Tracker *tracker.Handler
@@ -71,6 +75,8 @@ func Execute(version string) error {
 
 func newRootCmd(app *App, version string) *cobra.Command {
 	var configPath, dbPath string
+	var remoteURL, remoteToken string
+	var remoteInsecure bool
 	var noUpdateCheck bool
 
 	root := &cobra.Command{
@@ -84,18 +90,58 @@ func newRootCmd(app *App, version string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// The flag outranks every config source (file, env, default).
+			// Flags outrank every config source (file, env, default).
 			if dbPath != "" {
 				cfg.Database.Path = dbPath
 			}
-			kv, err := boltkv.Open(cfg.Database.Path)
-			if err != nil {
-				return err
+			if remoteURL != "" {
+				cfg.Remote.URL = remoteURL
 			}
+			if remoteToken != "" {
+				cfg.Remote.Token = remoteToken
+			}
+			if remoteInsecure {
+				cfg.Remote.Insecure = true
+			}
+
+			// A configured remote URL switches every command to client mode -
+			// except `server`, so a host whose config points at a remote can
+			// still serve its local store. An explicit --db forces local mode
+			// (it names a file, which a remote can't honor).
+			useRemote := cfg.Remote.URL != "" && cmd.Name() != "server"
+			if dbPath != "" {
+				if remoteURL != "" {
+					return errors.New("--db and --remote-url are mutually exclusive")
+				}
+				useRemote = false
+			}
+
+			// In client mode Runtime.DB and Runtime.StoreProvider stay nil:
+			// only the boltkv-backed domain stores ever dereference them.
 			app.rt = &env.Runtime{Config: cfg}
 			app.st = &store.Store{}
-			app.kv = kv
-			boltkv.BindProvider(app.rt, app.st, kv)
+			if useRemote {
+				c, err := remoteclient.New(cfg.Remote.URL, remoteclient.Options{
+					Token:    cfg.Remote.Token,
+					Insecure: cfg.Remote.Insecure,
+					CertFile: cfg.Remote.TLS.Cert,
+					KeyFile:  cfg.Remote.TLS.Key,
+					CAFile:   cfg.Remote.TLS.CA,
+					CacheTTL: cfg.Remote.CacheTTL,
+				})
+				if err != nil {
+					return err
+				}
+				app.remote = c
+				remoteclient.BindProvider(app.st, c)
+			} else {
+				kv, err := boltkv.Open(cfg.Database.Path)
+				if err != nil {
+					return err
+				}
+				app.kv = kv
+				boltkv.BindProvider(app.rt, app.st, kv)
+			}
 			app.Tasks = &tasks.Handler{Runtime: app.rt, Store: app.st}
 			app.Tracker = &tracker.Handler{Runtime: app.rt, Store: app.st}
 			app.Notes = &notes.Handler{Runtime: app.rt, Store: app.st}
@@ -103,11 +149,11 @@ func newRootCmd(app *App, version string) *cobra.Command {
 		},
 		// After any successful command, nudge about a newer release (cached,
 		// at most one short-timeout request per day). The TUI has its own
-		// banner and `update` reports explicitly; scripts are spared by the
+		// banner and `update` reports explicitly. Scripts are spared by the
 		// stderr TTY check. Cobra skips PostRun entirely when RunE errors.
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
 			switch cmd.Name() {
-			case "tui", "update", "help", "completion", "__complete":
+			case "tui", "update", "server", "help", "completion", "__complete":
 				return
 			}
 			if noUpdateCheck || app.JSON || !isTerminal(os.Stderr) {
@@ -149,7 +195,10 @@ func newRootCmd(app *App, version string) *cobra.Command {
 		},
 	}
 	root.PersistentFlags().StringVar(&configPath, "config", "", "path to config file (default: first of {ttt,config}.{yaml,yml} in ., ~/.config/ttt, ~/.local/share/ttt, ~/.ttt)")
-	root.PersistentFlags().StringVar(&dbPath, "db", "", "path to the database file (overrides config and TTT_DATABASE_PATH)")
+	root.PersistentFlags().StringVar(&dbPath, "db", "", "path to the database file (overrides config and TTT_DATABASE_PATH; forces local mode)")
+	root.PersistentFlags().StringVar(&remoteURL, "remote-url", "", "ttt server URL; when set, commands use the server instead of a local database (overrides config and TTT_REMOTE_URL)")
+	root.PersistentFlags().StringVar(&remoteToken, "remote-token", "", "bearer token for the remote server (overrides config and TTT_REMOTE_TOKEN)")
+	root.PersistentFlags().BoolVar(&remoteInsecure, "remote-insecure", false, "skip TLS certificate verification for the remote server (self-signed certs)")
 	root.PersistentFlags().BoolVar(&noUpdateCheck, "no-update-check", false, "disable the automatic update check (CLI notice and TUI banner)")
 	root.PersistentFlags().BoolVar(&app.JSON, "json", false, "output results as JSON (for scripting)")
 
@@ -165,6 +214,7 @@ func newRootCmd(app *App, version string) *cobra.Command {
 		newStatsCmd(app),
 		newTuiCmd(app, version, &noUpdateCheck),
 		newUpdateCmd(app, version),
+		newServerCmd(app, version),
 	)
 	return root
 }

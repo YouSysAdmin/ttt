@@ -23,6 +23,9 @@ var (
 	}
 	styleFlashOk  = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	styleFlashErr = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	// Mode badge: green for the local database, orange for a remote server.
+	styleModeLocal  = lipgloss.NewStyle().Foreground(lipgloss.Color("232")).Background(lipgloss.Color("42")).Bold(true)
+	styleModeRemote = lipgloss.NewStyle().Foreground(lipgloss.Color("232")).Background(lipgloss.Color("214")).Bold(true)
 	styleUpdate   = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 	styleHelp     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	styleTitle    = lipgloss.NewStyle().Bold(true)
@@ -267,6 +270,7 @@ func (m *model) bottomBar(w int) string {
 	default:
 		top = styleHelp.Render(clip(" ↑/↓ · enter start/pause · x stop · a add · e edit · d del · n add note · v notes · f filter · t period · T range · q quit", w))
 	}
+	top = padRight(top, w, m.modeBadge(w))
 
 	// The flash slot doubles as the update banner: transient feedback wins, the banner fills the quiet moments.
 	flash := " "
@@ -281,6 +285,50 @@ func (m *model) bottomBar(w int) string {
 		flash = styleUpdate.Render(clip(" ↑ Update available: v"+m.updateVersion+" — run: ttt update", w))
 	}
 	return top + "\n" + flash
+}
+
+// modeBadge renders the store-mode indicator: green "local", or orange
+// "remote <host>" with the countdown to the next cache sync. Empty when the
+// bar is too narrow to fit it alongside some help text.
+func (m *model) modeBadge(w int) string {
+	if m.deps.Remote == nil {
+		badge := styleModeLocal.Render(" local ")
+		if w < lipgloss.Width(badge)+20 {
+			return ""
+		}
+		return badge
+	}
+	label := " remote " + m.deps.Remote.Host
+	if m.deps.Remote.ShowSync && m.deps.Remote.NextSync != nil {
+		if next, ok := m.deps.Remote.NextSync(); !ok {
+			label += " · live"
+		} else if left := time.Until(next).Round(time.Second); left > 0 {
+			label += " · sync " + left.String()
+		} else {
+			label += " · sync now"
+		}
+	}
+	badge := styleModeRemote.Render(label + " ")
+	if w < lipgloss.Width(badge)+20 {
+		return ""
+	}
+	return badge
+}
+
+// padRight right-aligns suffix after content within width w, clipping the
+// content when it would overlap.
+func padRight(content string, w int, suffix string) string {
+	if suffix == "" {
+		return content
+	}
+	sw := lipgloss.Width(suffix)
+	room := w - sw - 1
+	if room < 0 {
+		return content
+	}
+	content = truncate.String(content, uint(room))
+	gap := room - lipgloss.Width(content) + 1
+	return content + strings.Repeat(" ", gap) + suffix
 }
 
 // listContent renders the task table, windowed vertically around the cursor.

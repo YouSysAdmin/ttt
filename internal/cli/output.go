@@ -18,7 +18,7 @@ func printJSON(cmd *cobra.Command, v any) error {
 	return enc.Encode(v)
 }
 
-// secs is the machine form of a duration; JSON payloads carry it next to the
+// secs is the machine form of a duration. JSON payloads carry it next to the
 // human HH:MM:SS string.
 func secs(d time.Duration) int64 {
 	return int64(d.Round(time.Second) / time.Second)

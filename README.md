@@ -7,7 +7,7 @@ Single binary, local [bbolt](https://github.com/etcd-io/bbolt) database.
 
 - Tasks grouped by free-form **projects**, with a status lifecycle
   (`todo` → `active` → `paused` → `done`).
-- Time entries per session; totals are the sum of sessions, so pause/resume is exact.
+- Time entries per session — totals are the sum of sessions, so pause/resume is exact.
 - **Notes** on tasks: PR links, context, anything.
 - **Git integration**: link a repository to a task and your commits made during a tracking
   session are imported as notes automatically
@@ -54,26 +54,29 @@ ttt tui                     # interactive mode
 | Command | Description |
 |---|---|
 | `add <name>` | Create a task (`-d` description, `-p` project, `-g` git repo) |
-| `start <name>` | Start tracking; pauses whatever else runs; auto-creates the task (`-p`, `-g` set fields) |
-| `pause` | Close the running session; task stays resumable |
+| `start <name>` | Start tracking — pauses whatever else runs and auto-creates the task (`-p`, `-g` set fields) |
+| `pause` | Close the running session — the task stays resumable |
 | `stop` | Close the running session and mark the task done |
 | `list` | Tasks with project, status, total time (`-p` filters by project) |
 | `note <text>` | Attach a note to the running task (`-t <task>` targets another) |
 | `show <name>` | Task details: fields, dates, totals, notes |
-| `edit <name>` | Update fields (`-n` rename, `-d`, `-p`, `-g`; empty value clears) |
-| `stats` | Time per task and project (`-p/--period 10d/2w/6m/1y`, default `1m`; `--project` filters) |
+| `edit <name>` | Update fields (`-n` rename, `-d`, `-p`, `-g` — empty value clears) |
+| `stats` | Time per task and project (`-p/--period 10d/2w/6m/1y`, default `1m` — `--project` filters) |
 | `tui` | Interactive terminal UI |
-| `update` | Self-update to the latest GitHub release (`--check` only reports); blocked for brew/apk/deb/rpm installs — use the package manager instead |
+| `update` | Self-update to the latest GitHub release (`--check` only reports) — blocked for brew/apk/deb/rpm installs, use the package manager instead |
+| `server` | Serve the local database to remote ttt clients (see Client/server mode) |
 | *(no command)* | Print tracking status |
 
-Global flags: `--db <path>` (use a specific database), `--config <path>`,
-`--json` (machine-readable output, see below), `--no-update-check` (disable the automatic update check), `--version`.
+Global flags: `--db <path>` (use a specific database, forces local mode),
+`--config <path>`, `--remote-url` / `--remote-token` / `--remote-insecure`
+(client mode, see below), `--json` (machine-readable output, see below),
+`--no-update-check` (disable the automatic update check), `--version`.
 
 With `--json`, every command writes exactly one JSON document to stdout and
 errors become `{"error": "..."}` on stderr (exit code 1), so output pipes
 straight into `jq` and scripts. Durations appear both as seconds
-(`total_seconds`, `session_seconds`) and as `HH:MM:SS` strings; timestamps
-are RFC 3339.
+(`total_seconds`, `session_seconds`) and as `HH:MM:SS` strings, and
+timestamps are RFC 3339.
 Examples: `ttt --json list | jq '.[].task.name'`,`ttt --json stats | jq .total_seconds`.
 
 After a successful command, ttt prints a one-line update notice to stderr
@@ -93,7 +96,7 @@ a stats panel with proportional bars.
 | `enter` | Start the selected task / pause it when already running |
 | `s` / `p` / `x` | Start / pause / stop explicitly |
 | `a` | New task (form modal: name, description, project, repo) |
-| `e` | Edit the selected task (same form; rename included) |
+| `e` | Edit the selected task (same form, rename included) |
 | `d` | Delete the selected task (confirmation modal) |
 | `n` | Add a note to the selected task |
 | `v` | Notes mode: `↑/↓` select, `e` edit, `d` delete, `esc` back |
@@ -117,6 +120,84 @@ repository are imported as task notes:
 Git failures (missing repo, no git) print a warning and never fail the
 command.
 
+## Client/server mode
+
+To share one database between several workstations, run a server where the
+database lives and point the other machines at it:
+
+```sh
+# on the host that owns the database
+ttt server --token secret                  # plain HTTP on :8320
+
+# on every workstation (flags, config, or env — see below)
+export TTT_REMOTE_URL=http://host:8320
+export TTT_REMOTE_TOKEN=secret
+ttt start write-docs                       # every command + the TUI now use the server
+```
+
+When `remote.url` is set, all commands and the TUI talk to the server
+instead of opening a local database. When it's not set, ttt works locally
+exactly as before. An explicit `--db` always forces local mode. On the
+server host itself, point the client at `http://localhost:8320` rather than
+using local mode — the database file is locked by the server.
+
+A token is required — the server refuses to start without one. TLS modes
+(`--tls-mode`):
+
+- `none` (default) — plain HTTP, fine for localhost, a LAN you trust, or a
+  VPN/tailscale network.
+- `manual` — your own certificate (`--tls-cert`, `--tls-key`).
+- `self-signed` — a certificate generated at startup (`--tls-fqdn`,
+  `--tls-alg rsa|ed25519`), clients connect with `--remote-insecure`.
+- `mutual` — mutual TLS (`--tls-cert`, `--tls-key`, `--tls-ca`), clients
+  present their keypair via `remote.tls.{cert,key,ca}`.
+- `acme` — Let's Encrypt via autocert (`--acme-hosts` is required so only
+  your hostnames can trigger issuance, plus `--acme-email`) — needs public
+  DNS and the HTTP challenge port.
+
+Server config lives under `server.*` (`server.listen`, `server.token`,
+`server.tls.*`, `server.acme.*`), client config under `remote.*`:
+
+```yaml
+# workstation ~/.config/ttt/config.yaml
+remote:
+  url: https://host:8320
+  token: secret
+```
+
+### Docker
+
+Multi-arch images (amd64/arm64) are published to the GitHub Container
+Registry on every release. The database lives in the `/data` volume and the
+token comes from `TTT_SERVER_TOKEN`:
+
+```sh
+docker run -d --name ttt-server \
+  -p 8320:8320 \
+  -e TTT_SERVER_TOKEN=change-me \
+  -v ttt-data:/data \
+  ghcr.io/yousysadmin/ttt:latest
+```
+
+Or use the compose file from the repo root (edit `TTT_SERVER_TOKEN` first,
+TLS examples inside):
+
+```sh
+docker compose up -d
+```
+
+Reads are cached client-side: the client fetches the whole store in one
+request and serves views from memory for `remote.cache_ttl` (default `10s`,
+`0` disables), so the TUI costs one request per ten seconds and browsing
+tasks generates no traffic. The TUI's bottom bar shows the mode: a green
+`local` badge, or an orange `remote <host>` badge. Writes always go straight to the server and
+refresh the cache, and the running timer keeps ticking every second because
+durations are computed locally.
+
+Notes for multi-machine use: timestamps come from each client's clock, and
+git repo links (`-g`) are paths on the machine that set them — commit import
+quietly skips machines where the path doesn't exist.
+
 ## Configuration
 
 Precedence: `--db` flag > `--config` file (must exist) > first config file
@@ -131,7 +212,9 @@ database:
   path: /home/me/.local/share/ttt/ttt.db
 ```
 
-Environment: `TTT_DATABASE_PATH`. Default database location:
+Every key is also an environment variable with the `TTT_` prefix and dots
+replaced by underscores: `TTT_DATABASE_PATH`, `TTT_REMOTE_URL`,
+`TTT_REMOTE_TOKEN`, `TTT_SERVER_TOKEN`, ... Default database location:
 `$XDG_DATA_HOME/ttt/ttt.db` (`~/.local/share/ttt/ttt.db`).
 
 ## Sync via cloud

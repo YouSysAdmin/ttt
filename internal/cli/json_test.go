@@ -126,9 +126,9 @@ func TestJSONOutputs(t *testing.T) {
 }
 
 func TestJSONErrorEnvelope(t *testing.T) {
-	// Pausing with nothing running errors; Execute (not tested here) wraps
-	// it in {"error": ...}. Here we pin that the command itself emits no
-	// partial output before failing.
+	// Pausing with nothing running errors, and Execute (not tested here)
+	// wraps it in {"error": ...}. Here we pin that the command itself emits
+	// no partial output before failing.
 	db := filepath.Join(t.TempDir(), "ttt.db")
 	app := &App{}
 	root := newRootCmd(app, "0.0.1")

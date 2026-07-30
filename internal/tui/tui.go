@@ -27,8 +27,20 @@ type Deps struct {
 	Tasks         *tasks.Handler
 	Tracker       *tracker.Handler
 	Notes         *notes.Handler
-	Version       string // running build, for the startup update check
-	NoUpdateCheck bool   // --no-update-check: skip the startup check entirely
+	Version       string      // running build, for the startup update check
+	NoUpdateCheck bool        // --no-update-check: skip the startup check entirely
+	Remote        *RemoteInfo // nil in local mode, drives the mode badge
+}
+
+// RemoteInfo describes client mode for the bottom-bar badge.
+type RemoteInfo struct {
+	// Host is the server address shown in the badge.
+	Host string
+	// NextSync reports when the read cache refetches. ok=false means reads
+	// go straight to the server (cache off or an old server).
+	NextSync func() (time.Time, bool)
+	// ShowSync appends the sync countdown to the badge (tui --debug).
+	ShowSync bool
 }
 
 // Run starts the TUI and blocks until the user quits.
@@ -270,8 +282,8 @@ func (m *model) Init() tea.Cmd {
 }
 
 // checkUpdate asks GitHub for a newer release once at startup. It runs as a
-// tea command (own goroutine), so the UI never waits on the network; failures
-// and dev builds resolve to an empty message.
+// tea command (own goroutine), so the UI never waits on the network, and
+// failures and dev builds resolve to an empty message.
 func (m *model) checkUpdate() tea.Msg {
 	if m.deps.NoUpdateCheck {
 		return updateCheckMsg{}

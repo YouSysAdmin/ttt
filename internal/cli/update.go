@@ -17,7 +17,7 @@ func newUpdateCmd(app *App, version string) *cobra.Command {
 			"and self-update is blocked there — upgrade through the package manager\n" +
 			"instead. Use --check to only report whether a newer version exists.",
 		Args: cobra.NoArgs,
-		// The update command never touches the database; overriding the root
+		// The update command never touches the database - overriding the root
 		// PersistentPreRunE skips config loading and the store flock.
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error { return nil },
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -54,6 +54,28 @@ func (s *Store) ListByTask(name string) ([]*note.Note, error) {
 	return out, nil
 }
 
+// All returns every note grouped by task name, chronological within each
+// task (keys share one lexically ordered bucket and each "<name>/" prefix is
+// a contiguous range). The remote server uses it to build complete state
+// snapshots in one bucket scan.
+func (s *Store) All() (map[string][]*note.Note, error) {
+	out := map[string][]*note.Note{}
+	err := s.Runtime.DB.View(func(tx *bbolt.Tx) error {
+		return tx.Bucket(s.bucket()).ForEach(func(k, v []byte) error {
+			n := &note.Note{}
+			if err := json.Unmarshal(v, n); err != nil {
+				return err
+			}
+			out[n.TaskName] = append(out[n.TaskName], n)
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Add persists n, bumping its CreatedAt by 1ns until the key is unique so
 // same-second notes (e.g. a batch of imported commits) never overwrite each
 // other.

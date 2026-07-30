@@ -699,3 +699,43 @@ func TestInputEscCancels(t *testing.T) {
 		t.Fatalf("cancelled task must not exist, view:\n%s", m.View())
 	}
 }
+
+func TestModeBadge(t *testing.T) {
+	// Local mode: green badge with no server address.
+	m := newTestModel(t)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = next.(*model)
+	if v := m.View(); !strings.Contains(v, " local ") {
+		t.Fatalf("local badge missing from view:\n%s", v)
+	}
+
+	// Remote mode: just the server address, no diagnostics.
+	m = newTestModel(t)
+	m.deps.Remote = &RemoteInfo{
+		Host: "ttt.example.com",
+		NextSync: func() (time.Time, bool) {
+			return time.Now().Add(42 * time.Second), true
+		},
+	}
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = next.(*model)
+	v := m.View()
+	if !strings.Contains(v, "remote ttt.example.com") {
+		t.Fatalf("remote badge missing from view:\n%s", v)
+	}
+	if strings.Contains(v, "sync") {
+		t.Fatalf("sync countdown shown without --debug:\n%s", v)
+	}
+
+	// --debug appends the countdown to the next cache sync.
+	m.deps.Remote.ShowSync = true
+	if v := m.View(); !strings.Contains(v, "sync 42s") {
+		t.Fatalf("debug badge missing countdown:\n%s", v)
+	}
+
+	// Cache off (old server or ttl 0): mark the connection as live.
+	m.deps.Remote.NextSync = func() (time.Time, bool) { return time.Time{}, false }
+	if v := m.View(); !strings.Contains(v, "live") {
+		t.Fatalf("live marker missing from view:\n%s", v)
+	}
+}

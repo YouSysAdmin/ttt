@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"ttt/internal/core/env"
 )
@@ -45,6 +46,11 @@ func TestLoadDefaults(t *testing.T) {
 	want := filepath.Join(home, ".local", "share", "ttt", "ttt.db")
 	if c.Database.Path != want {
 		t.Fatalf("default db path = %q, want %q", c.Database.Path, want)
+	}
+	// The default must decode into a non-zero duration - a decode failure
+	// would silently disable the remote read cache (0 means off).
+	if c.Remote.CacheTTL != 10*time.Second {
+		t.Fatalf("default remote.cache_ttl = %v, want 10s", c.Remote.CacheTTL)
 	}
 }
 

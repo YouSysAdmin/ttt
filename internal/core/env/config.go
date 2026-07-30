@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
@@ -14,10 +15,60 @@ import (
 
 type Config struct {
 	Database Database `mapstructure:"database"`
+	Remote   Remote   `mapstructure:"remote"`
+	Server   Server   `mapstructure:"server"`
 }
 
 type Database struct {
 	Path string `mapstructure:"path"`
+}
+
+// Remote selects client mode: when URL is set, every command talks to a
+// `ttt server` at that address instead of opening the local database.
+type Remote struct {
+	URL      string    `mapstructure:"url"`
+	Token    string    `mapstructure:"token"`
+	Insecure bool      `mapstructure:"insecure"`
+	TLS      RemoteTLS `mapstructure:"tls"`
+	// CacheTTL is the read snapshot cache lifetime: reads are served from
+	// one /v1/state fetch at most this old. 0 disables the cache.
+	CacheTTL time.Duration `mapstructure:"cache_ttl"`
+}
+
+// RemoteTLS is the client's mutual-TLS identity, for servers running with
+// --tls-mode mutual.
+type RemoteTLS struct {
+	Cert string `mapstructure:"cert"`
+	Key  string `mapstructure:"key"`
+	CA   string `mapstructure:"ca"`
+}
+
+// Server configures `ttt server`.
+type Server struct {
+	Listen string     `mapstructure:"listen"`
+	Token  string     `mapstructure:"token"`
+	TLS    ServerTLS  `mapstructure:"tls"`
+	ACME   ServerACME `mapstructure:"acme"`
+}
+
+// ServerTLS picks how the server terminates TLS: none (plain HTTP),
+// manual (cert/key files), self-signed (generated at startup for FQDN),
+// mutual (cert/key/ca, client certs required), or acme (Let's Encrypt).
+type ServerTLS struct {
+	Mode string `mapstructure:"mode"`
+	Cert string `mapstructure:"cert"`
+	Key  string `mapstructure:"key"`
+	CA   string `mapstructure:"ca"`
+	FQDN string `mapstructure:"fqdn"`
+	Alg  string `mapstructure:"alg"`
+}
+
+// ServerACME configures the acme TLS mode (autocert).
+type ServerACME struct {
+	Email    string   `mapstructure:"email"`
+	Hosts    []string `mapstructure:"hosts"`
+	CacheDir string   `mapstructure:"cache_dir"`
+	HTTPAddr string   `mapstructure:"http_addr"`
 }
 
 // configNames are the file names probed in each search directory, in order.
@@ -42,11 +93,33 @@ func Load(path string) (*Config, error) {
 	// explicit bind, so bind every key. Keep this list in sync with the structs.
 	for _, key := range []string{
 		"database.path",
+		"remote.url",
+		"remote.token",
+		"remote.insecure",
+		"remote.cache_ttl",
+		"remote.tls.cert",
+		"remote.tls.key",
+		"remote.tls.ca",
+		"server.listen",
+		"server.token",
+		"server.tls.mode",
+		"server.tls.cert",
+		"server.tls.key",
+		"server.tls.ca",
+		"server.tls.fqdn",
+		"server.tls.alg",
+		"server.acme.email",
+		"server.acme.hosts",
+		"server.acme.cache_dir",
+		"server.acme.http_addr",
 	} {
 		_ = v.BindEnv(key)
 	}
 
 	v.SetDefault("database.path", defaultDBPath())
+	v.SetDefault("remote.cache_ttl", "10s")
+	v.SetDefault("server.listen", ":8320")
+	v.SetDefault("server.tls.mode", "none")
 
 	if path != "" {
 		v.SetConfigFile(path)

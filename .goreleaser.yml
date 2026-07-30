@@ -93,6 +93,51 @@ nfpms:
         file_info:
           mode: 0644
 
+# Docker images for `ttt server`, pushed to the GitHub Container Registry
+# (the release workflow logs in and sets up buildx/QEMU). Per-arch images
+# are stitched into multi-arch tags by docker_manifests below.
+dockers:
+  - id: docker-amd64
+    ids: [linux]
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile
+    use: buildx
+    image_templates:
+      - ghcr.io/yousysadmin/ttt:{{ .Version }}-amd64
+    build_flag_templates:
+      - --platform=linux/amd64
+      - --label=org.opencontainers.image.title=ttt
+      - --label=org.opencontainers.image.description=Task & Time Tracking tool
+      - --label=org.opencontainers.image.source=https://github.com/YouSysAdmin/ttt
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.licenses=MIT
+  - id: docker-arm64
+    ids: [linux]
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile
+    use: buildx
+    image_templates:
+      - ghcr.io/yousysadmin/ttt:{{ .Version }}-arm64
+    build_flag_templates:
+      - --platform=linux/arm64
+      - --label=org.opencontainers.image.title=ttt
+      - --label=org.opencontainers.image.description=Task & Time Tracking tool
+      - --label=org.opencontainers.image.source=https://github.com/YouSysAdmin/ttt
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.licenses=MIT
+
+docker_manifests:
+  - name_template: ghcr.io/yousysadmin/ttt:{{ .Version }}
+    image_templates:
+      - ghcr.io/yousysadmin/ttt:{{ .Version }}-amd64
+      - ghcr.io/yousysadmin/ttt:{{ .Version }}-arm64
+  - name_template: ghcr.io/yousysadmin/ttt:latest
+    image_templates:
+      - ghcr.io/yousysadmin/ttt:{{ .Version }}-amd64
+      - ghcr.io/yousysadmin/ttt:{{ .Version }}-arm64
+
 brews:
   - ids: [default]
     repository:

@@ -56,6 +56,28 @@ func (s *Store) ListByTask(name string) ([]*entry.Entry, error) {
 	return out, nil
 }
 
+// All returns every entry grouped by task name, chronological within each
+// task (keys share one lexically ordered bucket and each "<name>/" prefix is
+// a contiguous range). The remote server uses it to build complete state
+// snapshots in one bucket scan.
+func (s *Store) All() (map[string][]*entry.Entry, error) {
+	out := map[string][]*entry.Entry{}
+	err := s.Runtime.DB.View(func(tx *bbolt.Tx) error {
+		return tx.Bucket(s.bucket()).ForEach(func(k, v []byte) error {
+			e := &entry.Entry{}
+			if err := json.Unmarshal(v, e); err != nil {
+				return err
+			}
+			out[e.TaskName] = append(out[e.TaskName], e)
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Put creates or replaces the entry keyed by its task name and start time.
 func (s *Store) Put(e *entry.Entry) error {
 	return s.Runtime.DB.Update(func(tx *bbolt.Tx) error {
