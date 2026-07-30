@@ -392,3 +392,42 @@ func zipBytes(t *testing.T, name string, content []byte) []byte {
 	zw.Close()
 	return buf.Bytes()
 }
+
+// Pre-release tags must never be offered: goreleaser's prerelease:auto keeps
+// them out of /releases/latest, and this client-side guard covers releases
+// published before that (or mis-marked by hand).
+func TestCheckLatestVersionSkipsPrerelease(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(Release{TagName: "v9.9.9-pre"})
+	}))
+	defer srv.Close()
+	withReleaseAPI(t, srv.URL)
+
+	res := CheckLatestVersion("1.0.0")
+	if res.Err != nil {
+		t.Fatalf("unexpected error: %v", res.Err)
+	}
+	if res.LatestVersion != "" {
+		t.Errorf("LatestVersion = %q, want empty (pre-releases are hidden)", res.LatestVersion)
+	}
+}
+
+func TestDownloadAndReplaceSkipsPrerelease(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(Release{TagName: "v9.9.9-rc1"})
+	}))
+	defer srv.Close()
+	withReleaseAPI(t, srv.URL)
+
+	var out strings.Builder
+	got, err := DownloadAndReplace("1.0.0", &out)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "1.0.0" {
+		t.Errorf("returned version = %q, want the current version back", got)
+	}
+	if !strings.Contains(out.String(), "pre-release") {
+		t.Errorf("expected a pre-release skip message, got %q", out.String())
+	}
+}

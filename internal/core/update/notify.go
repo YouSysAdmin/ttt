@@ -44,7 +44,9 @@ func NotifyIfOutdated(currentVersion string, w io.Writer) {
 		writeCache(latest)
 	}
 
-	if latest == "" || CompareVersions(currentVersion, latest) >= 0 {
+	// The prerelease guard also neutralizes caches written before the guard
+	// existed, which may hold a pre-release tag.
+	if latest == "" || isPrerelease(latest) || CompareVersions(currentVersion, latest) >= 0 {
 		return
 	}
 

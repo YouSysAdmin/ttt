@@ -7,7 +7,10 @@ before:
     - go mod download
 
 release:
-  prerelease: "false"
+  # auto marks releases from pre-release tags (v1.0.0-rc1, v0.3.0-pre) as
+  # GitHub prereleases, keeping them out of /releases/latest - the update
+  # check only offers stable releases.
+  prerelease: auto
 
 env:
   - CGO_ENABLED=0

@@ -59,6 +59,14 @@ func isDev(version string) bool {
 	return version == "" || version == "dev"
 }
 
+// isPrerelease reports whether version carries a pre-release suffix
+// ("0.3.0-pre", "1.0.0-rc1"). Every update surface skips those: only stable
+// releases are offered. Defense in depth next to goreleaser's
+// prerelease:auto, which keeps such tags out of /releases/latest anyway.
+func isPrerelease(version string) bool {
+	return strings.ContainsRune(stripV(version), '-')
+}
+
 // CheckLatestVersion fetches the latest release from GitHub and compares it
 // against currentVersion. Dev builds are not checked: an empty result is
 // returned.
@@ -73,7 +81,7 @@ func CheckLatestVersion(currentVersion string) CheckResult {
 	}
 
 	latest := stripV(rel.TagName)
-	if CompareVersions(currentVersion, latest) < 0 {
+	if !isPrerelease(latest) && CompareVersions(currentVersion, latest) < 0 {
 		return CheckResult{
 			CurrentVersion: currentVersion,
 			LatestVersion:  latest,
@@ -96,6 +104,11 @@ func DownloadAndReplace(currentVersion string, w io.Writer) (string, error) {
 	}
 
 	latest := stripV(rel.TagName)
+
+	if isPrerelease(latest) {
+		fmt.Fprintf(w, "Latest release v%s is a pre-release - skipping, only stable releases are installed\n", latest)
+		return currentVersion, nil
+	}
 
 	if isDev(currentVersion) {
 		fmt.Fprintln(w, "Warning: development build, current version unknown")
